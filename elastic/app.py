@@ -1,11 +1,33 @@
 from flask import Flask, request, jsonify, render_template_string
 from elasticsearch import Elasticsearch
 import json
+import numpy as np
+
+# Import AraBERT search engine
+try:
+    from arabert_search import AraBERTSearchEngine
+    ARABERT_AVAILABLE = True
+    print("AraBERT integration loaded successfully!")
+except ImportError as e:
+    print(f"AraBERT not available: {e}")
+    ARABERT_AVAILABLE = False
 
 app = Flask(__name__)
 
 # Elasticsearch connection
 es = Elasticsearch('http://localhost:9200', basic_auth=('elastic', 'Fe1odvmZ'))
+
+# Initialize AraBERT search engine if available
+if ARABERT_AVAILABLE:
+    try:
+        arabert_engine = AraBERTSearchEngine()
+        print("AraBERT search engine initialized")
+    except Exception as e:
+        print(f"Error initializing AraBERT: {e}")
+        ARABERT_AVAILABLE = False
+        arabert_engine = None
+else:
+    arabert_engine = None
 
 # HTML template
 HTML_TEMPLATE = '''
@@ -122,6 +144,24 @@ HTML_TEMPLATE = '''
             border-radius: 5px;
             border-right: 4px solid #3498db;
         }
+        .score {
+            background: #f39c12;
+            color: white;
+            padding: 3px 8px;
+            border-radius: 10px;
+            font-size: 12px;
+            display: inline-block;
+            margin-right: 10px;
+        }
+        .search-mode {
+            background: #9b59b6;
+            color: white;
+            padding: 3px 8px;
+            border-radius: 10px;
+            font-size: 12px;
+            display: inline-block;
+            margin-right: 10px;
+        }
         .result-number {
             background: #3498db;
             color: white;
@@ -155,6 +195,11 @@ HTML_TEMPLATE = '''
         <h1>🔍 البحث في المحاضرات الصوتية</h1>
         <div class="search-box">
             <input type="text" id="searchInput" placeholder="ابحث في النصوص... مثال: صلاة السفر">
+            <select id="searchMode">
+                <option value="enhanced">بحث محسّن (AraBERT)</option>
+                <option value="basic">بحث أساسي</option>
+                <option value="semantic">بحث دلالي</option>
+            </select>
             <select id="resultLimit">
                 <option value="10">10 نتائج</option>
                 <option value="20">20 نتيجة</option>
@@ -184,6 +229,7 @@ HTML_TEMPLATE = '''
             
             const query = document.getElementById('searchInput').value.trim();
             const limit = parseInt(document.getElementById('resultLimit').value);
+            const searchMode = document.getElementById('searchMode').value;
             
             if (!query) {
                 alert('يرجى إدخال كلمة للبحث');
@@ -205,7 +251,7 @@ HTML_TEMPLATE = '''
             fetch('/search', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({query: query, size: limit})
+                body: JSON.stringify({query: query, size: limit, mode: searchMode})
             })
             .then(response => response.json())
             .then(data => {
@@ -213,7 +259,7 @@ HTML_TEMPLATE = '''
                 totalResults = data.total || currentResults.length;
                 
                 resultsDiv.innerHTML = '';
-                resultsInfo.innerHTML = `تم العثور على ${totalResults} نتيجة`;
+                resultsInfo.innerHTML = `تم العثور على ${totalResults} نتيجة باستخدام ${getSearchModeText(searchMode)}`;
                 
                 if (currentResults.length > 0) {
                     displayResults(Math.min(LOAD_MORE_INCREMENT, currentResults.length));
@@ -234,6 +280,15 @@ HTML_TEMPLATE = '''
             });
         }
         
+        function getSearchModeText(mode) {
+            switch(mode) {
+                case 'enhanced': return 'البحث المحسّن';
+                case 'semantic': return 'البحث الدلالي';
+                case 'basic': return 'البحث الأساسي';
+                default: return 'البحث المحسّن';
+            }
+        }
+        
         function displayResults(count) {
             const resultsDiv = document.getElementById('results');
             const startIndex = displayedCount;
@@ -243,8 +298,15 @@ HTML_TEMPLATE = '''
                 const result = currentResults[i];
                 const div = document.createElement('div');
                 div.className = 'result';
+                
+                let scoreDisplay = '';
+                if (result.score) {
+                    scoreDisplay = `<span class="score">النقاط: ${result.score.toFixed(2)}</span>`;
+                }
+                
                 div.innerHTML = `
                     <div class="result-number">النتيجة ${i + 1}</div>
+                    ${scoreDisplay}
                     <div class="text-content">${result.text}</div>
                     <div class="time">⏰ الوقت: من ${result.start} ثانية إلى ${result.end} ثانية</div>
                     <a href="${result.youtube_link_with_time}" target="_blank" class="video-link">
@@ -288,26 +350,169 @@ def search():
     data = request.get_json()
     search_term = data.get('query', '')
     size = data.get('size', 50)  # Default to 50 results
+    mode = data.get('mode', 'enhanced')  # Default to enhanced search
     
     if not search_term:
         return jsonify({'results': [], 'total': 0})
     
-    # Elasticsearch query
+    try:
+        if mode == 'enhanced' and ARABERT_AVAILABLE and arabert_engine:
+            # Use enhanced search with AraBERT
+            results = enhanced_search(search_term, size)
+        elif mode == 'semantic' and ARABERT_AVAILABLE and arabert_engine:
+            # Use semantic search with embeddings
+            results = semantic_search(search_term, size)
+        else:
+            # Fallback to basic search
+            results = basic_search(search_term, size)
+        
+        return jsonify({
+            'results': results['hits'],
+            'total': results['total'],
+            'returned': len(results['hits']),
+            'mode': mode
+        })
+    
+    except Exception as e:
+        print(f"Search error: {e}")
+        # Fallback to basic search on error
+        try:
+            results = basic_search(search_term, size)
+            return jsonify({
+                'results': results['hits'],
+                'total': results['total'],
+                'returned': len(results['hits']),
+                'mode': 'basic_fallback'
+            })
+        except Exception as e2:
+            return jsonify({'error': str(e2), 'results': [], 'total': 0}), 500
+
+def basic_search(search_term, size=50):
+    """Basic Elasticsearch search"""
     query = {
         "match": {
             "text": search_term
         }
     }
     
+    # Get total count first
+    count_response = es.count(index='transcription', query=query)
+    total_count = count_response['count']
+    
+    # Get the actual results
+    response = es.search(index='transcription', query=query, size=min(size, 1000))
+    results = []
+    
+    for hit in response['hits']['hits']:
+        video_link = hit['_source']['video_link']
+        start_time = int(hit['_source']['start'])
+        
+        # Create YouTube link with timestamp
+        if 'youtube.com/watch?v=' in video_link:
+            video_id = video_link.split('v=')[1].split('&')[0]
+        elif 'youtu.be/' in video_link:
+            video_id = video_link.split('youtu.be/')[-1].split('?')[0]
+        else:
+            video_id = video_link
+        
+        youtube_link_with_time = f"https://www.youtube.com/watch?v={video_id}&t={start_time}s"
+        
+        results.append({
+            'text': hit['_source']['text'],
+            'start': hit['_source']['start'],
+            'end': hit['_source']['end'],
+            'video_link': video_link,
+            'youtube_link_with_time': youtube_link_with_time,
+            'score': hit['_score']
+        })
+    
+    return {
+        'hits': results,
+        'total': total_count
+    }
+
+def enhanced_search(search_term, size=50):
+    """Enhanced search using AraBERT and multiple Elasticsearch strategies"""
+    
+    # Create enhanced query
+    query = arabert_engine.create_enhanced_query(search_term)
+    
+    # Try enhanced index first, fallback to basic index
+    index_name = 'transcription_with_embeddings'
+    if not es.indices.exists(index=index_name):
+        index_name = 'transcription'
+    
+    # Get total count
+    count_response = es.count(index=index_name, query=query)
+    total_count = count_response['count']
+    
+    # Get results
+    response = es.search(
+        index=index_name, 
+        query=query, 
+        size=min(size, 1000),
+        sort=[{"_score": {"order": "desc"}}]
+    )
+    
+    results = []
+    for hit in response['hits']['hits']:
+        video_link = hit['_source']['video_link']
+        start_time = int(hit['_source']['start'])
+        
+        # Create YouTube link with timestamp
+        if 'youtube.com/watch?v=' in video_link:
+            video_id = video_link.split('v=')[1].split('&')[0]
+        elif 'youtu.be/' in video_link:
+            video_id = video_link.split('youtu.be/')[-1].split('?')[0]
+        else:
+            video_id = video_link
+        
+        youtube_link_with_time = f"https://www.youtube.com/watch?v={video_id}&t={start_time}s"
+        
+        results.append({
+            'text': hit['_source']['text'],
+            'start': hit['_source']['start'],
+            'end': hit['_source']['end'],
+            'video_link': video_link,
+            'youtube_link_with_time': youtube_link_with_time,
+            'score': hit['_score']
+        })
+    
+    return {
+        'hits': results,
+        'total': total_count
+    }
+
+def semantic_search(search_term, size=50):
+    """Semantic search using AraBERT embeddings"""
+    
+    # Check if embeddings index exists
+    index_name = 'transcription_with_embeddings'
+    if not es.indices.exists(index=index_name):
+        print("Embeddings index not found, falling back to enhanced search")
+        return enhanced_search(search_term, size)
+    
     try:
-        # Get total count first
-        count_response = es.count(index='transcription', query=query)
+        # Get query embedding
+        query_embedding = arabert_engine.get_embedding(search_term)
+        
+        # Create hybrid query (semantic + lexical)
+        query = arabert_engine.create_hybrid_query(search_term, query_embedding)
+        
+        # Get total count (approximate for script_score queries)
+        basic_query = arabert_engine.create_enhanced_query(search_term)
+        count_response = es.count(index=index_name, query=basic_query)
         total_count = count_response['count']
         
-        # Get the actual results
-        response = es.search(index='transcription', query=query, size=min(size, 1000))  # ES has a max of 10k by default
-        results = []
+        # Get results
+        response = es.search(
+            index=index_name,
+            query=query,
+            size=min(size, 1000),
+            sort=[{"_score": {"order": "desc"}}]
+        )
         
+        results = []
         for hit in response['hits']['hits']:
             video_link = hit['_source']['video_link']
             start_time = int(hit['_source']['start'])
@@ -327,17 +532,18 @@ def search():
                 'start': hit['_source']['start'],
                 'end': hit['_source']['end'],
                 'video_link': video_link,
-                'youtube_link_with_time': youtube_link_with_time
+                'youtube_link_with_time': youtube_link_with_time,
+                'score': hit['_score']
             })
         
-        return jsonify({
-            'results': results,
-            'total': total_count,
-            'returned': len(results)
-        })
-    
+        return {
+            'hits': results,
+            'total': total_count
+        }
+        
     except Exception as e:
-        return jsonify({'error': str(e), 'results': [], 'total': 0}), 500
+        print(f"Semantic search error: {e}")
+        return enhanced_search(search_term, size)
 
 @app.route('/api/search')
 def api_search():
