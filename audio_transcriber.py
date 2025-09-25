@@ -150,7 +150,7 @@ def process_folder(input_folder, output_folder="transcriptions", language='ar', 
         print(f"\n[{i}/{len(audio_files)}] Processing: {audio_id}")
         
         # Check if already processed
-        existing_transcript = output_path / audio_id / f"{audio_id}_transcript.json"
+        existing_transcript = output_path / audio_id / f"{audio_id}.json"
         if existing_transcript.exists():
             print(f"⚠️  Already transcribed: {audio_id}")
             successful += 1

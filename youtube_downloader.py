@@ -135,7 +135,7 @@ def download_video(video_info, download_dir):
 
 def main():
     """Main function to download playlist"""
-    playlist_url = "https://www.youtube.com/watch?v=6WsQrVoB_wM&list=PLOnIdxOBLlJx0bEJuUqjysrD3JsTnOj2A"
+    playlist_url = "https://www.youtube.com/watch?v=zwDDYosdjHg&list=PLOnIdxOBLlJxajYFGbZKPIdDvQa6fdDmh"
     
     print("🎵 Su'al Ahl al-Dhikr Audio Downloader")
     print("=" * 50)
