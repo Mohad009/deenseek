@@ -4,30 +4,17 @@ import json
 import numpy as np
 
 # Import AraBERT search engine
-try:
-    from arabert_search import AraBERTSearchEngine
-    ARABERT_AVAILABLE = True
-    print("AraBERT integration loaded successfully!")
-except ImportError as e:
-    print(f"AraBERT not available: {e}")
-    ARABERT_AVAILABLE = False
+from arabert_search import AraBERTSearchEngine
+print("AraBERT integration loaded successfully!")
 
 app = Flask(__name__)
 
 # Elasticsearch connection
 es = Elasticsearch('http://localhost:9200', basic_auth=('elastic', 'Fe1odvmZ'))
 
-# Initialize AraBERT search engine if available
-if ARABERT_AVAILABLE:
-    try:
-        arabert_engine = AraBERTSearchEngine()
-        print("AraBERT search engine initialized")
-    except Exception as e:
-        print(f"Error initializing AraBERT: {e}")
-        ARABERT_AVAILABLE = False
-        arabert_engine = None
-else:
-    arabert_engine = None
+# Initialize AraBERT search engine
+arabert_engine = AraBERTSearchEngine()
+print("AraBERT search engine initialized")
 
 # HTML template
 HTML_TEMPLATE = '''
@@ -356,15 +343,15 @@ def search():
         return jsonify({'results': [], 'total': 0})
     
     try:
-        if mode == 'enhanced' and ARABERT_AVAILABLE and arabert_engine:
-            # Use enhanced search with AraBERT
-            results = enhanced_search(search_term, size)
-        elif mode == 'semantic' and ARABERT_AVAILABLE and arabert_engine:
+        if mode == 'semantic':
             # Use semantic search with embeddings
             results = semantic_search(search_term, size)
-        else:
-            # Fallback to basic search
+        elif mode == 'basic':
+            # Use basic search
             results = basic_search(search_term, size)
+        else:
+            # Default to enhanced search
+            results = enhanced_search(search_term, size)
         
         return jsonify({
             'results': results['hits'],
@@ -375,17 +362,7 @@ def search():
     
     except Exception as e:
         print(f"Search error: {e}")
-        # Fallback to basic search on error
-        try:
-            results = basic_search(search_term, size)
-            return jsonify({
-                'results': results['hits'],
-                'total': results['total'],
-                'returned': len(results['hits']),
-                'mode': 'basic_fallback'
-            })
-        except Exception as e2:
-            return jsonify({'error': str(e2), 'results': [], 'total': 0}), 500
+        return jsonify({'error': str(e), 'results': [], 'total': 0}), 500
 
 def basic_search(search_term, size=50):
     """Basic Elasticsearch search"""
@@ -437,10 +414,13 @@ def enhanced_search(search_term, size=50):
     # Create enhanced query
     query = arabert_engine.create_enhanced_query(search_term)
     
-    # Try enhanced index first, fallback to basic index
+    # Use the index with embeddings
     index_name = 'transcription_with_embeddings'
+    # Ensure index exists
     if not es.indices.exists(index=index_name):
-        index_name = 'transcription'
+        print(f"Warning: Index {index_name} not found. Creating it with the proper mapping.")
+        # Create the index with semantic_text field type
+        es.indices.create(index=index_name, body=arabert_engine.create_index_mapping())
     
     # Get total count
     count_response = es.count(index=index_name, query=query)
@@ -484,27 +464,29 @@ def enhanced_search(search_term, size=50):
     }
 
 def semantic_search(search_term, size=50):
-    """Semantic search using AraBERT embeddings"""
+    """Semantic search using AraBERT embeddings with semantic_text field type"""
     
-    # Check if embeddings index exists
+    # Use embeddings index
     index_name = 'transcription_with_embeddings'
+    # Ensure index exists
     if not es.indices.exists(index=index_name):
-        print("Embeddings index not found, falling back to enhanced search")
-        return enhanced_search(search_term, size)
+        print(f"Warning: Index {index_name} not found. Creating it with the proper mapping.")
+        # Create the index with semantic_text field type
+        es.indices.create(index=index_name, body=arabert_engine.create_index_mapping())
     
     try:
-        # Get query embedding
+        # Get query embedding for hybrid search
         query_embedding = arabert_engine.get_embedding(search_term)
         
-        # Create hybrid query (semantic + lexical)
-        query = arabert_engine.create_hybrid_query(search_term, query_embedding)
+        # Create semantic query using semantic_text field type
+        query = arabert_engine.create_semantic_query(search_term, query_embedding)
         
-        # Get total count (approximate for script_score queries)
+        # Get approximate total count using a basic query
         basic_query = arabert_engine.create_enhanced_query(search_term)
         count_response = es.count(index=index_name, query=basic_query)
         total_count = count_response['count']
         
-        # Get results
+        # Get results using the semantic query
         response = es.search(
             index=index_name,
             query=query,

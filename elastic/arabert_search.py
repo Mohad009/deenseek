@@ -9,15 +9,11 @@ class AraBERTSearchEngine:
         """Initialize AraBERT model for Arabic text processing and embeddings"""
         self.model_name = "aubmindlab/bert-base-arabertv2"
         print("Loading AraBERT model...")
-        try:
-            self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
-            self.model = AutoModel.from_pretrained(self.model_name)
-            print("AraBERT model loaded successfully!")
-        except Exception as e:
-            print(f"Warning: Could not load AraBERT model: {e}")
-            print("Fallback: Using basic text processing only")
-            self.tokenizer = None
-            self.model = None
+        # Always load the model - no fallback mechanism
+        self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+        self.model = AutoModel.from_pretrained(self.model_name)
+        print("AraBERT model loaded successfully!")
+        self.embedding_dim = 768  # AraBERT base embedding dimension
         
         # Arabic synonyms dictionary for query expansion
         self.synonyms = {
@@ -64,33 +60,25 @@ class AraBERTSearchEngine:
     
     def get_embedding(self, text: str) -> np.ndarray:
         """Get AraBERT embedding for text"""
-        if not self.model or not self.tokenizer:
-            # Fallback: return zero vector if model not available
-            return np.zeros(768)
-        
         text = self.preprocess_arabic_text(text)
         if not text:
-            return np.zeros(768)
+            return np.zeros(self.embedding_dim)
         
-        try:
-            # Tokenize and encode
-            inputs = self.tokenizer(
-                text, 
-                return_tensors='pt', 
-                truncation=True, 
-                padding=True, 
-                max_length=512
-            )
+        # Tokenize and encode
+        inputs = self.tokenizer(
+            text, 
+            return_tensors='pt', 
+            truncation=True, 
+            padding=True, 
+            max_length=512
+        )
+        
+        with torch.no_grad():
+            outputs = self.model(**inputs)
+            # Use mean pooling of last hidden states
+            embeddings = outputs.last_hidden_state.mean(dim=1)
             
-            with torch.no_grad():
-                outputs = self.model(**inputs)
-                # Use mean pooling of last hidden states
-                embeddings = outputs.last_hidden_state.mean(dim=1)
-                
-            return embeddings.numpy().flatten()
-        except Exception as e:
-            print(f"Error generating embedding: {e}")
-            return np.zeros(768)
+        return embeddings.numpy().flatten()
     
     def expand_query(self, query: str) -> List[str]:
         """Expand query with synonyms and related terms"""
@@ -202,42 +190,135 @@ class AraBERTSearchEngine:
             }
         }
     
-    def create_semantic_query(self, search_term: str, query_embedding: np.ndarray) -> Dict:
-        """Create semantic search query using dense vectors"""
-        return {
-            "script_score": {
-                "query": {"match_all": {}},
-                "script": {
-                    "source": "cosineSimilarity(params.query_vector, 'text_embedding') + 1.0",
-                    "params": {"query_vector": query_embedding.tolist()}
+    def create_semantic_query(self, search_term: str, query_embedding: np.ndarray = None) -> Dict:
+        """Create semantic search query using dense vectors and semantic_text field type"""
+        # If we have embeddings, use dense vector search
+        if query_embedding is not None and hasattr(query_embedding, 'tolist'):
+            return {
+                "script_score": {
+                    "query": {"match_all": {}},
+                    "script": {
+                        "source": "cosineSimilarity(params.query_vector, 'text_embedding') + 1.0",
+                        "params": {"query_vector": query_embedding.tolist()}
+                    }
                 }
             }
-        }
+        # Otherwise, use semantic_text field type
+        else:
+            return {
+                "knn": {
+                    "field": "content",
+                    "query_vector_builder": {
+                        "text_embedding": {
+                            "text": search_term
+                        }
+                    },
+                    "k": 10,
+                    "num_candidates": 100
+                }
+            }
     
     def create_hybrid_query(self, search_term: str, query_embedding: np.ndarray = None) -> Dict:
         """Create hybrid query combining semantic and lexical search"""
         lexical_query = self.create_enhanced_query(search_term)
-        
-        if query_embedding is None or not hasattr(query_embedding, 'tolist'):
-            # If no embeddings available, use only lexical search
-            return lexical_query
+        semantic_query = self.create_semantic_query(search_term, query_embedding)
         
         # Combine semantic and lexical search
         return {
             "bool": {
                 "should": [
-                    {
-                        "script_score": {
-                            "query": {"match_all": {}},
-                            "script": {
-                                "source": "cosineSimilarity(params.query_vector, 'text_embedding') + 1.0",
-                                "params": {"query_vector": query_embedding.tolist()}
-                            },
-                            "boost": 3.0
-                        }
-                    },
+                    semantic_query,
                     lexical_query
                 ],
                 "minimum_should_match": 1
+            }
+        }
+    
+    def get_bulk_embeddings(self, texts: List[str], batch_size: int = 32) -> List[np.ndarray]:
+        """Generate embeddings for multiple texts in batches
+        
+        Args:
+            texts: List of texts to embed
+            batch_size: Number of texts to process in each batch
+            
+        Returns:
+            List of numpy arrays containing the embeddings
+        """
+        embeddings = []
+        for i in range(0, len(texts), batch_size):
+            batch_texts = texts[i:i + batch_size]
+            # Preprocess all texts in the batch
+            processed_texts = [self.preprocess_arabic_text(text) for text in batch_texts]
+            
+            # Create a batch of inputs
+            inputs = self.tokenizer(
+                processed_texts,
+                return_tensors='pt',
+                padding=True,
+                truncation=True,
+                max_length=512
+            )
+            
+            # Generate embeddings for the batch
+            with torch.no_grad():
+                outputs = self.model(**inputs)
+                batch_embeddings = outputs.last_hidden_state.mean(dim=1)
+                
+            # Add the embeddings to our list
+            for emb in batch_embeddings:
+                embeddings.append(emb.numpy())
+                
+        return embeddings
+    
+    def create_index_mapping(self) -> Dict:
+        """Create Elasticsearch index mapping with semantic_text field type for embedding storage"""
+        return {
+            "mappings": {
+                "properties": {
+                    "text": {
+                        "type": "text",
+                        "analyzer": "arabic"
+                    },
+                    "processed_text": {
+                        "type": "text",
+                        "analyzer": "arabic"
+                    },
+                    "content": {
+                        "type": "semantic_text"
+                    },
+                    "text_embedding": {
+                        "type": "dense_vector",
+                        "dims": self.embedding_dim,
+                        "index": True,
+                        "similarity": "cosine"
+                    },
+                    "source": {
+                        "type": "keyword"
+                    },
+                    "timestamp": {
+                        "type": "date"
+                    }
+                }
+            },
+            "settings": {
+                "analysis": {
+                    "analyzer": {
+                        "arabic": {
+                            "type": "custom",
+                            "tokenizer": "standard",
+                            "filter": [
+                                "lowercase",
+                                "arabic_normalization",
+                                "arabic_stemmer"
+                            ]
+                        }
+                    },
+                    "filter": {
+                        "arabic_stemmer": {
+                            "type": "stemmer",
+                            "language": "arabic"
+                        }
+                    }
+                }
             }
         }

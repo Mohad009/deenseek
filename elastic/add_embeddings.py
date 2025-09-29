@@ -18,44 +18,16 @@ def add_embeddings_to_index():
         print("Error: Original 'transcription' index not found!")
         return
     
-    # Update the index mapping to include dense vector field
-    mapping = {
-        "mappings": {
-            "properties": {
-                "text": {
-                    "type": "text", 
-                    "analyzer": "arabic"
-                },
-                "processed_text": {
-                    "type": "text", 
-                    "analyzer": "arabic"
-                },
-                "text_embedding": {
-                    "type": "dense_vector",
-                    "dims": 768,  # AraBERT embedding dimension
-                    "index": True,
-                    "similarity": "cosine"
-                },
-                "start": {"type": "float"},
-                "end": {"type": "float"},
-                "video_link": {"type": "keyword"}
-            }
-        },
-        "settings": {
-            "analysis": {
-                "analyzer": {
-                    "arabic": {
-                        "tokenizer": "standard",
-                        "filter": [
-                            "lowercase",
-                            "arabic_normalization",
-                            "arabic_stem"
-                        ]
-                    }
-                }
-            }
-        }
-    }
+    # Get the base mapping from AraBERT search engine
+    base_mapping = arabert_engine.create_index_mapping()
+    
+    # Add specific fields for our transcription data
+    base_mapping["mappings"]["properties"]["start"] = {"type": "float"}
+    base_mapping["mappings"]["properties"]["end"] = {"type": "float"}
+    base_mapping["mappings"]["properties"]["video_link"] = {"type": "keyword"}
+    
+    # Use the enhanced mapping
+    mapping = base_mapping
     
     new_index_name = 'transcription_with_embeddings'
     
@@ -106,24 +78,37 @@ def add_embeddings_to_index():
         with tqdm(total=total_docs, desc="Processing documents") as pbar:
             
             while hits:
+                # Process a batch of texts efficiently
+                batch_texts = []
+                batch_hits = []
+                
                 for hit in hits:
-                    try:
+                    doc = hit['_source']
+                    text = doc.get('text', '')
+                    
+                    if not text:
+                        continue
+                    
+                    # Collect texts for batch processing
+                    batch_texts.append(text)
+                    batch_hits.append(hit)
+                
+                if batch_texts:
+                    # Get processed texts
+                    processed_texts = [arabert_engine.preprocess_arabic_text(text) for text in batch_texts]
+                    
+                    # Generate embeddings in bulk for better efficiency
+                    embeddings = arabert_engine.get_bulk_embeddings(batch_texts)
+                    
+                    # Create documents
+                    for i, (hit, text, processed_text, embedding) in enumerate(zip(batch_hits, batch_texts, processed_texts, embeddings)):
                         doc = hit['_source']
-                        text = doc.get('text', '')
-                        
-                        if not text:
-                            continue
-                        
-                        # Get AraBERT embedding
-                        embedding = arabert_engine.get_embedding(text)
-                        
-                        # Add processed text
-                        processed_text = arabert_engine.preprocess_arabic_text(text)
                         
                         # Create new document with embedding
                         new_doc = {
                             'text': text,
                             'processed_text': processed_text,
+                            'content': text,  # For semantic_text field type
                             'text_embedding': embedding.tolist(),
                             'start': doc.get('start', 0),
                             'end': doc.get('end', 0),
@@ -140,22 +125,18 @@ def add_embeddings_to_index():
                         
                         processed_count += 1
                         pbar.update(1)
-                        
-                        # Bulk index every batch_size documents
-                        if len(batch_docs) >= (batch_size * 2):  # batch_size * 2 (index + doc)
-                            try:
-                                bulk_response = es.bulk(body=batch_docs)
-                                if bulk_response['errors']:
-                                    print(f"Bulk indexing errors: {bulk_response['errors']}")
-                                batch_docs = []
-                                time.sleep(0.1)  # Small delay to avoid overwhelming ES
-                            except Exception as e:
-                                print(f"Error in bulk indexing: {e}")
-                                batch_docs = []
                     
-                    except Exception as e:
-                        print(f"Error processing document {hit.get('_id', 'unknown')}: {e}")
-                        continue
+                    # Bulk index every batch_size documents
+                    if len(batch_docs) >= (batch_size * 2):  # batch_size * 2 (index + doc)
+                        try:
+                            bulk_response = es.bulk(body=batch_docs)
+                            if bulk_response['errors']:
+                                print(f"Bulk indexing errors: {bulk_response['errors']}")
+                            batch_docs = []
+                            time.sleep(0.1)  # Small delay to avoid overwhelming ES
+                        except Exception as e:
+                            print(f"Error in bulk indexing: {e}")
+                            batch_docs = []
                 
                 # Get next batch
                 try:
@@ -228,12 +209,16 @@ def test_enhanced_search():
             enhanced_response = es.search(index='transcription_with_embeddings', query=enhanced_query, size=3)
             print(f"Enhanced search results: {enhanced_response['hits']['total']['value']}")
             
-            # Test with embeddings if available
-            if arabert_engine.model is not None:
-                embedding = arabert_engine.get_embedding(query)
-                hybrid_query = arabert_engine.create_hybrid_query(query, embedding)
-                hybrid_response = es.search(index='transcription_with_embeddings', query=hybrid_query, size=3)
-                print(f"Hybrid search results: {hybrid_response['hits']['total']['value']}")
+            # Test semantic search (with semantic_text field)
+            semantic_query = arabert_engine.create_semantic_query(query)
+            semantic_response = es.search(index='transcription_with_embeddings', query=semantic_query, size=3)
+            print(f"Semantic search results: {semantic_response['hits']['total']['value']}")
+            
+            # Test hybrid search (combining lexical and semantic search)
+            embedding = arabert_engine.get_embedding(query)
+            hybrid_query = arabert_engine.create_hybrid_query(query, embedding)
+            hybrid_response = es.search(index='transcription_with_embeddings', query=hybrid_query, size=3)
+            print(f"Hybrid search results: {hybrid_response['hits']['total']['value']}")
             
         except Exception as e:
             print(f"Error testing query '{query}': {e}")
