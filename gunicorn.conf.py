@@ -1,6 +1,7 @@
 # Gunicorn configuration file
 import os
-
+from dotenv import load_dotenv
+load_dotenv()
 # Set the number of workers based on environment or a default calculation
 workers = os.environ.get('GUNICORN_WORKERS', '2')
 if workers.isdigit():
@@ -20,8 +21,8 @@ accesslog = '-'
 errorlog = '-'
 loglevel = 'info'
 
-# Bind to all interfaces on the PORT environment variable (Render will set this)
-bind = f"0.0.0.0:{os.environ.get('PORT', '5000')}"
+# Bind to all interfaces on the PORT environment
+bind = f"0.0.0.0:{os.getenv("PORT")}"
 
 # Customize worker processes (optional)
 preload_app = True
