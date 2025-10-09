@@ -1,18 +1,3 @@
-from flask import Flask, request, jsonify, render_template_string
-from elasticsearch import Elasticsearch
-import json
-
-app = Flask(__name__)
-
-# Elasticsearch connection
-es = Elasticsearch(
-    "",
-    api_key=""
-)
-
-
-# HTML template
-HTML_TEMPLATE = '''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
@@ -250,7 +235,7 @@ HTML_TEMPLATE = '''
                 div.innerHTML = `
                     <div class="result-number">النتيجة ${i + 1}</div>
                     <div class="text-content">${result.text}</div>
-                    <div class="time">⏰ الوقت: من ${result.start} ثانية إلى ${result.end} ثانية</div>
+                    <div class="time">⏰ الوقت: من ${result.start} إلى ${result.end} </div>
                     <a href="${result.youtube_link_with_time}" target="_blank" class="video-link">
                         🎥 مشاهدة الفيديو من هذه النقطة
                     </a>
@@ -281,105 +266,3 @@ HTML_TEMPLATE = '''
     </script>
 </body>
 </html>
-'''
-
-@app.route('/')
-def index():
-    return render_template_string(HTML_TEMPLATE)
-
-@app.route('/search', methods=['POST'])
-def search():
-    data = request.get_json()
-    search_term = data.get('query', '')
-    size = data.get('size', 50)  # Default to 50 results
-    
-    if not search_term:
-        return jsonify({'results': [], 'total': 0})
-    
-    # Elasticsearch query
-    query = {
-        "match": {
-            "text": search_term
-        }
-    }
-    
-    try:
-        # Get total count first
-        count_response = es.count(index='transcription', query=query)
-        total_count = count_response['count']
-        
-        # Get the actual results
-        response = es.search(index='transcription', query=query, size=min(size, 1000))  # ES has a max of 10k by default
-        results = []
-        
-        for hit in response['hits']['hits']:
-            video_link = hit['_source']['video_link']
-            start_time = int(hit['_source']['start'])
-            
-            # Create YouTube link with timestamp
-            if 'youtube.com/watch?v=' in video_link:
-                video_id = video_link.split('v=')[1].split('&')[0]
-            elif 'youtu.be/' in video_link:
-                video_id = video_link.split('youtu.be/')[-1].split('?')[0]
-            else:
-                video_id = video_link
-            
-            youtube_link_with_time = f"https://www.youtube.com/watch?v={video_id}&t={start_time}s"
-            
-            results.append({
-                'text': hit['_source']['text'],
-                'start': hit['_source']['start'],
-                'end': hit['_source']['end'],
-                'video_link': video_link,
-                'youtube_link_with_time': youtube_link_with_time
-            })
-        
-        return jsonify({
-            'results': results,
-            'total': total_count,
-            'returned': len(results)
-        })
-    
-    except Exception as e:
-        return jsonify({'error': str(e), 'results': [], 'total': 0}), 500
-
-@app.route('/api/search')
-def api_search():
-    search_term = request.args.get('q', '')
-    size = int(request.args.get('size', 50))
-    
-    if not search_term:
-        return jsonify({'results': [], 'total': 0})
-    
-    query = {
-        "match": {
-            "text": search_term
-        }
-    }
-    
-    try:
-        count_response = es.count(index='transcription', query=query)
-        total_count = count_response['count']
-        
-        response = es.search(index='transcription', query=query, size=min(size, 1000))
-        results = []
-        
-        for hit in response['hits']['hits']:
-            results.append({
-                'text': hit['_source']['text'],
-                'start': hit['_source']['start'],
-                'end': hit['_source']['end'],
-                'video_link': hit['_source']['video_link']
-            })
-        
-        return jsonify({
-            'results': results,
-            'total': total_count,
-            'returned': len(results)
-        })
-    
-    except Exception as e:
-        return jsonify({'error': str(e), 'results': [], 'total': 0}), 500
-
-if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
