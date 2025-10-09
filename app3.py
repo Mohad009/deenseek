@@ -34,54 +34,7 @@ es = Elasticsearch(
 
 # Ensure templates directory exists
 os.makedirs('templates', exist_ok=True)
-@app.route('/fast', methods=['GET'])
-def debug():
-    import sys
-    import platform
-    
-    try:
-        # Test Elasticsearch
-        es_status = "Not connected"
-        es_version = "Unknown"
-        try:
-            info = es.info()
-            es_status = "Connected"
-            es_version = info.get("version", {}).get("number", "Unknown")
-        except Exception as es_error:
-            es_status = f"Error: {str(es_error)}"
-        
-        # Check environment variables
-        env_vars = {
-            "MODEL_ID": os.getenv("MODEL_ID", "not set"),
-            "ENVIRONMENT": os.environ.get("ENVIRONMENT", "not set"),
-            "PORT": os.environ.get("PORT", "not set"),
-            "ElasticURL": os.getenv("ElasticURL", "not set")[:10] + "..." if os.getenv("ElasticURL") else "not set",
-            "ElasticAPIKey": "***" if os.getenv("ElasticAPIKey") else "not set"
-        }
-        
-        # Check python environment
-        python_info = {
-            "version": sys.version,
-            "platform": platform.platform(),
-            "modules": [m.__name__ for m in sys.modules.values() if hasattr(m, "__name__")][:20]  # First 20 modules
-        }
-        
-        return jsonify({
-            "status": "ok",
-            "elasticsearch": {
-                "status": es_status,
-                "version": es_version
-            },
-            "environment_variables": env_vars,
-            "python_info": python_info
-        })
-    except Exception as e:
-        import traceback
-        return jsonify({
-            "status": "error",
-            "error": str(e),
-            "traceback": traceback.format_exc()
-        }), 500
+
     
 
 @app.route('/')
