@@ -1,0 +1,5 @@
+flask==2.3.3
+elasticsearch==8.10.0
+python-dotenv==1.0.0
+gunicorn==21.2.0
+Werkzeug==2.3.7

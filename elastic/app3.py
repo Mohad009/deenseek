@@ -17,10 +17,17 @@ def format_time(seconds):
 
 app = Flask(__name__)
 load_dotenv()
+
+# Configure for production or development
+is_production = os.environ.get('ENVIRONMENT', 'development') == 'production'
+
 # Elasticsearch connection
 es = Elasticsearch(
     os.getenv("ElasticURL"),
-    api_key=os.getenv("ElasticAPIKey")
+    api_key=os.getenv("ElasticAPIKey"),
+    # Add retry_on_timeout for better stability in production
+    retry_on_timeout=True,
+    max_retries=3
 )
 
 # Ensure templates directory exists
@@ -106,4 +113,10 @@ def search():
 
 
 if __name__ == '__main__':
-    app.run()
+    # Use production settings when on Render or other production environments
+    if is_production:
+        # Let gunicorn handle the app in production
+        pass
+    else:
+        # Use development server locally
+        app.run(debug=True, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))

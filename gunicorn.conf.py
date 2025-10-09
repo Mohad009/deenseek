@@ -1,0 +1,27 @@
+# Gunicorn configuration file
+import os
+
+# Set the number of workers based on environment or a default calculation
+workers = os.environ.get('GUNICORN_WORKERS', '2')
+if workers.isdigit():
+    workers = int(workers)
+else:
+    import multiprocessing
+    workers = (multiprocessing.cpu_count() * 2) + 1
+
+# Worker settings
+worker_class = 'sync'
+worker_connections = 1000
+timeout = 30
+keepalive = 2
+
+# Logging
+accesslog = '-'
+errorlog = '-'
+loglevel = 'info'
+
+# Bind to all interfaces on the PORT environment variable (Render will set this)
+bind = f"0.0.0.0:{os.environ.get('PORT', '5000')}"
+
+# Customize worker processes (optional)
+preload_app = True
