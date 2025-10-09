@@ -5,7 +5,11 @@ import json
 app = Flask(__name__)
 
 # Elasticsearch connection
-es = Elasticsearch('http://localhost:9200', basic_auth=('elastic', 'Fe1odvmZ'))
+es = Elasticsearch(
+    "https://my-elasticsearch-project-b379cd.es.us-central1.gcp.elastic.cloud:443",
+    api_key="cWtSWnlaa0J3c1NZU2VhTHdsMlo6dE5KSVJ4WTVRMFpDc3EtMG41VDBVQQ=="
+)
+
 
 # HTML template
 HTML_TEMPLATE = '''

@@ -40,8 +40,8 @@ def transform_file(input_file, output_dir):
 
 def main():
     # Directories
-    input_dir = "transcriptions_1445h_v3 - Copy"
-    output_dir = "transcriptions_1445h_v4"
+    input_dir = "transcriptions_1437"
+    output_dir = "transcriptions_1437h"
     
     # Create output directory if it doesn't exist
     os.makedirs(output_dir, exist_ok=True)
