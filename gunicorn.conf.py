@@ -22,7 +22,7 @@ errorlog = '-'
 loglevel = 'info'
 
 # Bind to all interfaces on the PORT environment
-bind = f"0.0.0.0:{os.getenv('PORT')}"
+bind = f"0.0.0.0:{os.getenv('PORT','5000')}"
 
 # Customize worker processes (optional)
 preload_app = True
