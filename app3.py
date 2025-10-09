@@ -34,6 +34,29 @@ es = Elasticsearch(
 
 # Ensure templates directory exists
 os.makedirs('templates', exist_ok=True)
+@app.route('/test', methods=['GET'])
+def test():
+    try:
+        # Test basic ES connection
+        es_info = es.info()
+        return jsonify({
+            'status': 'ok',
+            'elasticsearch': {
+                'status': 'connected',
+                'version': es_info['version']['number']
+            },
+            'env': {
+                'MODEL_ID': os.getenv('MODEL_ID', 'not_set'),
+                'ENVIRONMENT': os.environ.get('ENVIRONMENT', 'not_set')
+            }
+        })
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e),
+            'elasticsearch': 'disconnected'
+        }), 500
+    
 
 @app.route('/')
 def index():
