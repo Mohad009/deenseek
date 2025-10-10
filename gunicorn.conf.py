@@ -3,9 +3,9 @@ import os
 from dotenv import load_dotenv
 load_dotenv()
 # Set the number of workers based on environment or a default calculation
-workers = os.getenv("GUNICORN_WORKERS")
-if workers.isdigit():
-    workers = int(workers)
+workers_env = os.getenv("GUNICORN_WORKERS")
+if workers_env and workers_env.isdigit():
+    workers = int(workers_env)
 else:
     import multiprocessing
     workers = (multiprocessing.cpu_count() * 2) + 1
