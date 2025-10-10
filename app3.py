@@ -21,7 +21,7 @@ CORS(app)
 load_dotenv()
 
 # Configure for production or development
-is_production = os.environ.get('ENVIRONMENT', 'development') == 'production'
+# is_production = os.environ.get('ENVIRONMENT', 'development') == 'production'
 
 # Elasticsearch connection
 es = Elasticsearch(
@@ -117,10 +117,11 @@ def search():
 
 
 if __name__ == '__main__':
-    # Use production settings when on Render or other production environments
-    if is_production:
-        # Let gunicorn handle the app in production
-        pass
-    else:
-        # Use development server locally
-        app.run(debug=True, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
+    app.run()
+    # # Use production settings when on Render or other production environments
+    # if is_production:
+    #     # Let gunicorn handle the app in production
+    #     pass
+    # else:
+    #     # Use development server locally
+    #     app.run(debug=True, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
