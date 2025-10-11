@@ -5,4 +5,4 @@ The transcriptions are available in multiple versions, as the JSON files are str
 
 In addition, the repository includes scripts for downloading the episodes and generating their transcriptions.
 
-- note : v3 is the latest and best
+- note : v4 is the latest and best
