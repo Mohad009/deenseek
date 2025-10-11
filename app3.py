@@ -28,8 +28,8 @@ es = Elasticsearch(
     os.getenv("ElasticURL"),
     api_key=os.getenv("ElasticAPIKey"),
    
-    retry_on_timeout=True,
-    max_retries=3
+    # retry_on_timeout=True,
+    # max_retries=3
 )
 
 # Ensure templates directory exists
