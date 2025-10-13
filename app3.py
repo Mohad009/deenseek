@@ -5,6 +5,11 @@ from dotenv import load_dotenv
 import os
 import time
 
+
+# def model_status():
+#     try:
+        
+#     except request
 def format_time(seconds):
     """Convert seconds to MM:SS format using built-in time functions"""
     if not seconds or not isinstance(seconds, (int, float)):
