@@ -6,10 +6,7 @@ import os
 import time
 
 
-# def model_status():
-#     try:
-        
-#     except request
+
 def format_time(seconds):
     """Convert seconds to MM:SS format using built-in time functions"""
     if not seconds or not isinstance(seconds, (int, float)):
@@ -33,14 +30,28 @@ es = Elasticsearch(
     os.getenv("ElasticURL"),
     api_key=os.getenv("ElasticAPIKey"),
    
-    # retry_on_timeout=True,
-    # max_retries=3
+    retry_on_timeout=True,
+    max_retries=3
 )
+
+
+
+
 
 # Ensure templates directory exists
 os.makedirs('templates', exist_ok=True)
 
     
+# @app.route('/response',methods=['GET'])
+# def model_status():
+#     try:
+#         resp = es.inference.get(
+#         task_type="text_embedding",
+#         inference_id=os.getenv("MODEL_ID"),
+#                         )
+#         return jsonify(resp), 500
+#     except Exception as e:
+#         return jsonify({'error': str(e)}), 500
 
 @app.route('/')
 def index():
@@ -76,7 +87,7 @@ def search():
     try:
         # Using vector search
         response = es.search(
-            index="gate_transcription",
+            index="gate_transcription_v2",
             retriever=retriever_object,
             size=min(size, 1000)
         )
