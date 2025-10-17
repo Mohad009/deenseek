@@ -113,7 +113,8 @@ def search():
             formatted_start_time = format_time(start_time)
             formatted_end_time = format_time(hit['_source'].get('end'))
             results.append({
-                'text': hit['_source']['text'],
+                'question': hit['_source']['question'],
+                'answer': hit['_source']['answer'],
                 'start': formatted_start_time,
                 'end': formatted_end_time,
                 'video_link': video_link,
@@ -134,10 +135,3 @@ def search():
 
 if __name__ == '__main__':
     app.run()
-    # # Use production settings when on Render or other production environments
-    # if is_production:
-    #     # Let gunicorn handle the app in production
-    #     pass
-    # else:
-    #     # Use development server locally
-    #     app.run(debug=True, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
