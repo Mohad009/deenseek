@@ -3,7 +3,7 @@ import os
 from dotenv import load_dotenv
 load_dotenv()
 # Set the number of workers based on environment or a default calculation
-workers_env = os.getenv("GUNICORN_WORKERS")
+workers_env = os.getenv("GUNICORN_WORKERS","2")
 if workers_env and workers_env.isdigit():
     workers = int(workers_env)
 else:
@@ -22,7 +22,7 @@ errorlog = '-'
 loglevel = 'info'
 
 # Bind to all interfaces on the PORT environment
-bind = os.getenv('PORT', '10000')
+bind = os.getenv("PORT", "5000")
 bind = f"0.0.0.0:{bind}"
 
 # Customize worker processes (optional)
