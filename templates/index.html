@@ -200,6 +200,18 @@
                 padding: 10px;
             }
         }
+        .badge{
+            display:inline-block;
+            background:#f1c40f;
+            color:#2c3e50;
+            padding:4px 8px;
+            border-radius:12px;
+            font-size:12px;
+            margin-left:8px;
+        }
+        .main-badge{ background:#3498db; color:#fff }
+        .qa-block{ margin-bottom:18px }
+        .highlight-match{ box-shadow: 0 0 0 3px rgba(46, 204, 113, 0.12); border-left: 4px solid #2ecc71 }
     </style>
 </head>
 <body>
@@ -269,7 +281,7 @@
                 
                 if (currentResults.length > 0) {
                     displayResults(Math.min(LOAD_MORE_INCREMENT, currentResults.length));
-                    
+
                     if (currentResults.length > LOAD_MORE_INCREMENT) {
                         loadMoreBtn.style.display = 'block';
                     }
@@ -290,27 +302,36 @@
             const resultsDiv = document.getElementById('results');
             const startIndex = displayedCount;
             const endIndex = Math.min(startIndex + count, currentResults.length);
-            
+
             for (let i = startIndex; i < endIndex; i++) {
-                const result = currentResults[i];
+                const group = currentResults[i];
                 const div = document.createElement('div');
                 div.className = 'result';
-                div.innerHTML = `
-                    <div class="result-number">النتيجة ${i + 1}</div>
-                    <span class="question-label">السؤال:</span>
-                    <div class="text-content">${result.question}</div>
-                    <span class="answer-label">الإجابة:</span>
-                    <div class="answer-content">${result.answer}</div>
-                    <div class="time">⏰ الوقت: من ${result.start} إلى ${result.end} </div>
-                    <a href="${result.youtube_link_with_time}" target="_blank" class="video-link">
-                        🎥 مشاهدة الفيديو من هذه النقطة
-                    </a>
-                `;
+                let groupHtml = `<div class="result-number">المجموعة ${i + 1}</div>`;
+
+                group.items.forEach((item, idx) => {
+                    const matchedClass = item.is_match ? 'highlight-match' : '';
+                    const roleLabel = item.is_follow_up ? '<span class="badge">متابعة</span>' : '<span class="badge main-badge">رئيسي</span>';
+                    groupHtml += `
+                        <div class="qa-block ${matchedClass}">
+                            <div class="question-label">${roleLabel} السؤال:</div>
+                            <div class="text-content">${item.question}</div>
+                            <div class="answer-label">الإجابة:</div>
+                            <div class="answer-content">${item.answer}</div>
+                            <div class="time">⏰ الوقت: من ${item.start} إلى ${item.end} </div>
+                            <a href="${item.youtube_link_with_time}" target="_blank" class="video-link">
+                                🎥 مشاهدة الفيديو من هذه النقطة
+                            </a>
+                        </div>
+                    `;
+                });
+
+                div.innerHTML = groupHtml;
                 resultsDiv.appendChild(div);
             }
-            
+
             displayedCount = endIndex;
-            
+
             // Hide load more button if all results are displayed
             if (displayedCount >= currentResults.length) {
                 document.getElementById('loadMoreBtn').style.display = 'none';

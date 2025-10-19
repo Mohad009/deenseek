@@ -1,6 +1,6 @@
-flask==2.3.3
-flask-cors==4.0.0
-elasticsearch==9.1.1
-python-dotenv==1.0.0
-gunicorn==21.2.0
-Werkzeug==2.3.7
+flask
+flask-cors
+elasticsearch
+python-dotenv
+gunicorn
+Werkzeug
