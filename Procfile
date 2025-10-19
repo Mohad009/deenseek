@@ -1,1 +1,1 @@
-web: gunicorn -c gunicorn.conf.py "app_v2.:app"
+web: gunicorn -c gunicorn.conf.py app_v2:app
